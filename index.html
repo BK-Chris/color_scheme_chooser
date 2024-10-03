@@ -20,7 +20,20 @@
     </header>
 
     <main>
-        <canvas id="canvas" width="500px" height="500px">
+        <form id="choose_mode">
+            <label for="modes">Choose a selection mode</label>
+            <select name="modes" id="modes">
+                <option value="monochromatic">Monochromatic</option>
+                <option value="analogous">Analogous</option>
+                <option value="complementary">Complementary</option>
+                <option value="split-complementary">Split-Complementary</option>
+                <option value="triadic">Triadic</option>
+                <option value="tetradic">Tetradic</option>
+                <option value="square">Square</option>
+            </select>
+            <input type="submit" value="Switch Mode">
+        </form>
+        <canvas id="canvas" width="500" height="500">
 
         </canvas>
     </main>
@@ -28,23 +41,23 @@
     <footer>
         <section id="footer_goals">
             <h3>Goal of the project</h3>
-            <p>
+
             <ul>
                 <li>This is part of another project of mine which can be checked out <a
                         href="https://github.com/BK-Chris/elte_web_project">here.</a></li>
             </ul>
-            </p>
+
         </section>
         <section id="footer_resource">
             <h3>Resources</h3>
-            <p>
+
 
             <ul>
                 <li><a target="_blank" href="https://developer.mozilla.org/en-US/docs/Web/API/Canvas_API">Canvas API</a>
                 </li>
             </ul>
 
-            </p>
+
         </section>
         <div id="footer_copyright">
             <p>
@@ -60,6 +73,7 @@
                 </a>
             </p>
         </div>
+
     </footer>
 </body>
 
