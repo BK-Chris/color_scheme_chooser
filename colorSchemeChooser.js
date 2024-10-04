@@ -4,13 +4,29 @@ class Rect {
         this.y = Number(y);
         this.w = Number(width);
         this.h = Number(height);
+
+        this.centerX = Number((x + width / 2));
+        this.centerY = Number((y + height / 2));
     }
 
-    getMiddlePoint() {
-        return {
-            x: Number((this.x + this.w / 2)),
-            y: Number((this.y + this.h / 2))
-        }
+    move(deltaX, deltaY) {
+        this.x += deltaX;
+        this.centerX += deltaX;
+        this.y += deltaY;
+        this.centerY += deltaY;
+    }
+
+    rotate(radian, pivotX, pivotY) {
+        const translatedX = this.centerX - pivotX;
+        const translatedY = this.centerY - pivotY;
+
+        const rotatedX = translatedX * Math.cos(radian) - translatedY * Math.sin(radian);
+        const rotatedY = translatedX * Math.sin(radian) + translatedY * Math.cos(radian);
+
+        this.x = (rotatedX + pivotX) - this.w / 2;
+        this.y = (rotatedY + pivotY) - this.h / 2;
+        this.centerX = (this.x + this.w / 2);
+        this.centerY = (this.y + this.h / 2);
     }
 
     contains(x, y) {
@@ -19,32 +35,36 @@ class Rect {
     }
 
     toString() {
-        return { x: this.x, y: this.y, width: this.w, height: this.h };
+        return { x: this.x, y: this.y, width: this.w, height: this.h, centerX: this.centerX, centerY: this.centerY, };
     }
 }
 
 const c = document.getElementById("canvas");
-const ctx = c.getContext("2d");
-const steps = 6; // number of shades -1 (white in the middle)
-//const numberOfShadeSelectors = 4 // must be less than or equal to steps - 1
+const ctx = c.getContext("2d", { willReadFrequently: true });
 
-var currentMode = "monochromatic";
-var currentAngle = 270;
-var currentPosition = { x: -1, y: -1 }
+let colorSchemeMode = "monochromatic"; // the default mode
 
-var hitRects = []; // If the current location is within one of the hitRects drag is allowed.
-var selectedHitRectIndex = -1;
-var isMouseDown = false;
-var isDragAllowed = false;
+const numberOfCirles = 6;
+let currentCircle; // default, used to keep track of which segments are affected.
+let currentPosition = { x: -1, y: -1 } // Used to keep track of movement of the mouse
 
+let hitRectangles = []; // The clickable area of the small color picker circles.
+let isMouseDown = false; // Used to prevent mouseMove from unintential triggering.
+let isDragAllowed = false; // Whether the user clicked on a hitbox or not.
 
-var midX = () => c.clientWidth / 2;
-var midY = () => c.clientHeight / 2;
-var maxBound = () => (c.clientHeight > c.clientWidth) ? c.clientWidth : c.clientHeight;
-var degreeToRad = (degree) => degree * Math.PI / 180;
-var clear = () => ctx.clearRect(0, 0, c.width, c.height);
-var minRadius = () => maxBound() / 2 / steps;
-var createRGBCode = (rgb) => 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+let midX = c.width / 2;
+let midY = c.height / 2;
+let minRadius = ((c.height > c.width) ? c.width / 2 : c.height / 2) / numberOfCirles;
+
+let freeSpaceInward;
+let freeSpaceOutward;
+
+let degreeToRadian = (degree) => degree * Math.PI / 180;
+let radianToDegree = (rad) => rad * (180 / Math.PI);
+let clear = () => ctx.clearRect(0, 0, c.width, c.height);
+
+let createRGBCode = (rgb) => 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
+let calculateVectorDistance = (x1, y1, x2, y2) => Math.sqrt(Math.pow((x1 - x2), 2) + Math.pow((y1 - y2), 2));
 
 const mainColors = [
     "#ac1a1a", "#d84060", "#a04080", "#4040a0",
@@ -58,26 +78,53 @@ const mainColors = [
 initialize();
 
 /***********************************************************/
+/* FOR DEMO */
+const form = document.getElementById("choose_mode");
+form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    const modes = Array.from(document.getElementById("modes").children);
+    hitRectangles = setMode(modes.find((mode) => mode.selected).value);
+    refresh();
+});
+console.log(hitRectangles);
+
+/* FOR DEMO */
+/***********************************************************/
+
+/***********************************************************/
 /* Initialization */
 
 function initialize() {
-    refresh()
     setEventListeners();
+    hitRectangles = setMode(colorSchemeMode);
+    refresh();
 }
 
 function refresh() {
     clear();
+    drawBackground();
     drawColorWheel();
-    setMode(currentMode, currentAngle);
-    console.log(getChoosenShades());
+    drawColorSelectors();
 }
 
 /***********************************************************/
 /* Events, Eventhandlers */
 function setEventListeners() {
+    window.addEventListener("resize", reCalculateSizes);
     c.addEventListener("mousedown", (event) => { mouseDownHandler(event) });
     c.addEventListener("mousemove", (event) => { mouseMoveHandler(event) });
     c.addEventListener("mouseup", mouseUpHandler);
+    c.addEventListener("mouseleave", mouseUpHandler);
+}
+
+function reCalculateSizes() {
+    midX = c.width / 2;
+    midY = c.height / 2;
+    let maxRadius = (c.height > c.width) ? c.width / 2 : c.height / 2;
+    minRadius = maxRadius / numberOfCirles;
+    isMouseDown = false;
+    isDragAllowed = false;
+    refresh();
 }
 
 function mouseDownHandler(event) {
@@ -85,14 +132,15 @@ function mouseDownHandler(event) {
     canvasRect = canvas.getBoundingClientRect();
     currentPosition.x = event.clientX - canvasRect.left;
     currentPosition.y = event.clientY - canvasRect.top;
+    console.log(currentPosition);
 
     let i = 0;
-    while (hitRects.length != i && !hitRects[i].contains(currentPosition.x, currentPosition.y))
+    while (hitRectangles.length != i && !hitRectangles[i].contains(currentPosition.x, currentPosition.y))
         i++;
 
-    if (i != hitRects.length) {
+    if (i != hitRectangles.length) {
+        currentCircle = Math.floor(calculateVectorDistance(midX, midY, currentPosition.x, currentPosition.y) / minRadius) + 1;
         isDragAllowed = true;
-        selectedHitRectIndex = i;
     } else {
         isDragAllowed = false;
     }
@@ -100,53 +148,97 @@ function mouseDownHandler(event) {
 
 function mouseMoveHandler(event) {
     if (!isMouseDown || !isDragAllowed) return;
+    /* Rotation implementation */
+    const lastPosition = { x, y } = currentPosition;
+    const lastAngle = Math.atan2(lastPosition.y - midY, lastPosition.x - midX);
+
     currentPosition.x = event.clientX - canvasRect.left;
     currentPosition.y = event.clientY - canvasRect.top;
-    currentAngle = Math.atan2(currentPosition.y - midY(), currentPosition.x - midX()) * (180 / Math.PI);
+
+    const newAngle = Math.atan2(currentPosition.y - midY, currentPosition.x - midX);
+    const deltaAngle = newAngle - lastAngle;
+
+    hitRectangles.forEach(hitRect => { hitRect.rotate(deltaAngle, midX, midY); });
+
+    /* Jump implementation */
+    const newCirle = Math.floor(calculateVectorDistance(midX, midY, currentPosition.x, currentPosition.y) / minRadius) + 1;
+
+    if (newCirle < currentCircle && freeSpaceInward > 0) {
+        hitRectangles.forEach(hitRect => {
+            const currentDistance = calculateVectorDistance(hitRect.centerX,
+                hitRect.centerY, midX, midY)
+            let directionVector;
+
+            directionVector = { // Moves towards center
+                x: (midX - hitRect.centerX) * (minRadius / currentDistance),
+                y: (midY - hitRect.centerY) * (minRadius / currentDistance)
+            }
+            hitRect.move(directionVector.x, directionVector.y);
+        });
+        currentCircle--
+        freeSpaceInward--;
+        freeSpaceOutward++;
+
+    } else if (newCirle > currentCircle && freeSpaceOutward > 0) {
+        hitRectangles.forEach(hitRect => {
+            const currentDistance = calculateVectorDistance(hitRect.centerX,
+                hitRect.centerY, midX, midY)
+            let directionVector;
+
+            directionVector = { // Moves away from center
+                x: (hitRect.centerX - midX) * (minRadius / currentDistance),
+                y: (hitRect.centerY - midY) * (minRadius / currentDistance)
+            }
+            hitRect.move(directionVector.x, directionVector.y);
+        });
+        currentCircle = newCirle;
+        freeSpaceInward++;
+        freeSpaceOutward--;
+    }
+
     refresh();
 }
 
 function mouseUpHandler() {
     isMouseDown = false;
     isDragAllowed = false;
-    console.log(getChoosenShades());
 }
 
 /***********************************************************/
 /* Functions */
 
+function drawBackground() {
+    ctx.save();
+    ctx.fillStyle = "black";
+    ctx.rect(0, 0, c.width, c.height);
+    ctx.fill();
+    ctx.restore();
+}
 
 function drawColorWheel() {
     ctx.save();
-    for (let i = steps; i > 0; i--) {
-        const gradient = ctx.createConicGradient(degreeToRad(30), midX(), midY());
+    for (let i = numberOfCirles; i > 0; i--) {
+        const gradient = ctx.createConicGradient(degreeToRadian(30), midX, midY);
         for (let j = 0; j < mainColors.length; j++) {
-            //gradient.addColorStop((1 / mainColors.length) * j, adjustShade(hexToRgb(mainColors[j]), Math.pow(1.1, (steps - i)))); exponential color change
-            gradient.addColorStop((1 / mainColors.length) * j, adjustShade(hexToRgb(mainColors[j]), 1 + (1 - i / steps)));
+            gradient.addColorStop((1 / mainColors.length) * j, adjustShade(hexToRgb(mainColors[j]), Math.pow(1.15, (numberOfCirles - i))));
         }
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(midX(), midY(), minRadius() * i, 0, degreeToRad(360));
+        ctx.arc(midX, midY, minRadius * i, 0, degreeToRadian(360));
         ctx.fill();
     }
-    /* Adds a white circle at the end. */
-    ctx.fillStyle = "white";
-    ctx.beginPath();
-    ctx.arc(midX(), midY(), minRadius(), 0, degreeToRad(360));
-    ctx.fill();
     ctx.restore();
 };
 
 function drawColorSelectors() {
     ctx.save();
     ctx.lineWidth = 5;
-    hitRects.forEach(hitRect => {
-        let midPoint = hitRect.getMiddlePoint();
-        const imageData = ctx.getImageData(midPoint.x, midPoint.y, 1, 1);
+    hitRectangles.forEach(hitRect => {
+        const imageData = ctx.getImageData(hitRect.centerX, hitRect.centerY, 1, 1);
         ctx.beginPath();
         ctx.fillStyle = createRGBCode(imageData.data.slice(0, 3));
         ctx.strokeStyle = "white";
-        ctx.arc(midPoint.x, midPoint.y, (minRadius() / 1.2) / 2, 0, degreeToRad(360));
+        ctx.arc(hitRect.centerX, hitRect.centerY, (minRadius / 1.2) / 2, 0, degreeToRadian(360));
         ctx.fill();
         ctx.stroke();
     });
@@ -155,129 +247,68 @@ function drawColorSelectors() {
 
 function getChoosenShades() {
     shades = [];
-    hitRects.forEach(hitRect => {
-        let midPoint = hitRect.getMiddlePoint();
-        const imageData = ctx.getImageData(midPoint.x, midPoint.y, 1, 1);
+    hitRectangles.forEach(hitRect => {
+        const imageData = ctx.getImageData(hitRect.centerX, hitRect.centerY, 1, 1);
         shades.push(createRGBCode(imageData.data.slice(0, 3)));
     });
     return shades;
 }
 
 /* Color Scheme Modes */
-function setMode(mode, degree) {
+function setMode(mode) {
+    let degreeStops;
+    let repetation; // How many row to make must be lower than the number of circles!
+
     /* These are the id names of the color schemes */
     switch (mode) {
         case "monochromatic":
-            hitRects = monochromatic(degree);
+            degreeStops = [270];
+            repetation = 4;
             break;
         case "analogous":
-            hitRects = analogous(degree);
+            degreeStops = [240, 270, 300];
+            repetation = 2;
             break;
         case "complementary":
-            hitRects = complementary(degree);
+            degreeStops = [270, 90];
+            repetation = 2;
             break;
         case "split-complementary":
-            hitRects = splitComplementary(degree);
+            degreeStops = [270, 60, 120];
+            repetation = 2;
             break;
         case "triadic":
-            hitRects = triadic(degree);
+            degreeStops = [270, 30, 150];
+            repetation = 1;
             break;
         case "tetradic":
-            hitRects = tetradic(degree);
+            degreeStops = [240, 300, 60, 120];
+            repetation = 1;
             break;
         case "square":
-            hitRects = square(degree);
+            degreeStops = [270, 0, 90, 180];
+            repetation = 1;
             break;
         default:
             console.error("The requested mode does not exists!");
     }
-    drawColorSelectors();
-}
 
-// Use it for rect creation only!
-function monochromatic(degree) {
     let rects = [];
-    for (let i = 1; i < steps; i++) {
-        let distanceFromMidPoint = (minRadius() * i + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
+    for (let rep = 0; rep < repetation; rep++) {
+        for (let i = 0; i < degreeStops.length; i++) {
+            let distanceFromMidPoint = ((minRadius * (numberOfCirles - 1) + minRadius / 2) - minRadius * rep);
+            let x = midX + distanceFromMidPoint * Math.cos(degreeToRadian(degreeStops[i]));
+            let y = midY + distanceFromMidPoint * Math.sin(degreeToRadian(degreeStops[i]));
+            rects.push(new Rect(x - minRadius / 2, y - minRadius / 2, minRadius, minRadius));
+        }
     }
+    //currentCircle = numberOfCirles;
+    freeSpaceInward = numberOfCirles - repetation;
+    freeSpaceOutward = 0;
     return rects;
 }
 
-function analogous(degree) {
-    const deltaDegree = 30;
-    degree -= deltaDegree;
-    let rects = [];
-    for (let i = 1; i <= 3; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + deltaDegree * i));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + deltaDegree * i));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
 
-function complementary(degree) {
-    const deltaDegree = 180;
-    let rects = [];
-    for (let i = 1; i <= 2; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + deltaDegree * i));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + deltaDegree * i));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
-
-function splitComplementary(degree) {
-    const degreeStops = [0, 150, 210];
-    let rects = [];
-    for (let i = 1; i <= 3; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + degreeStops[i - 1]));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + degreeStops[i - 1]));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
-
-function triadic(degree) {
-    const deltaDegree = 120;
-    let rects = [];
-    for (let i = 1; i <= 3; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + deltaDegree * i));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + deltaDegree * i));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
-
-function tetradic(degree) {
-    const degreeStops = [0, 60, 180, 240];
-    let rects = [];
-    for (let i = 1; i <= 4; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + degreeStops[i - 1]));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + degreeStops[i - 1]));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
-
-function square(degree) {
-    const deltaDegree = 90;
-    let rects = [];
-    for (let i = 1; i <= 4; i++) {
-        let distanceFromMidPoint = (minRadius() * (steps - 1) + minRadius() / 2);
-        let x = midX() + distanceFromMidPoint * Math.cos(degreeToRad(degree + deltaDegree * i));
-        let y = midY() + distanceFromMidPoint * Math.sin(degreeToRad(degree + deltaDegree * i));
-        rects.push(new Rect(x - minRadius() / 2, y - minRadius() / 2, minRadius(), minRadius()));
-    }
-    return rects;
-}
 
 function hexToRgb(hex) {
     hex = hex.replace("#", "");
@@ -297,7 +328,7 @@ function adjustShade(rgb, factor) {
 }
 
 /***********************************************************/
-/* For visual debugging! */
+/* For visual debugging, not part of the project. */
 
 async function pause(ms) {
     return new Promise(resolve => {
@@ -307,7 +338,7 @@ async function pause(ms) {
 
 function hightLightHitRects() {
     ctx.save();
-    hitRects.forEach(hitRect => {
+    hitRectangles.forEach(hitRect => {
         ctx.beginPath();
         ctx.rect(hitRect.x, hitRect.y, hitRect.w, hitRect.h);
         ctx.strokeStyle = "red";
@@ -316,12 +347,3 @@ function hightLightHitRects() {
     });
     ctx.restore();
 }
-
-const form = document.getElementById("choose_mode");
-
-form.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const modes = Array.from(document.getElementById("modes").children);
-    currentMode = modes.find((mode) => mode.selected).value;
-    refresh();
-});
