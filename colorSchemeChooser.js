@@ -43,7 +43,7 @@ class Rect {
 }
 
 const c = document.getElementById("canvas");
-const ctx = c.getContext("2d", { willReadFrequently: true });
+const ctx = c.getContext("2d", { willReadFrequently: true }); // MDN: This will force the use of a software (instead of hardware accelerated) 2D canvas and can save memory when calling getImageData() frequently.
 
 let isTouchDevice;
 let colorSchemeMode = "monochromatic"; // the default mode
@@ -53,16 +53,16 @@ let currentPosition = { x: -1, y: -1 } // Used to keep track of movement of the 
 let hitRectangles = []; // The clickable area of the small color picker circles.
 let isMouseDown = false; // Used to prevent mouseMove from unintential triggering.
 let isDragAllowed = false; // Whether the user clicked on a hitbox or not.
-let midX = c.width / 2;
-let midY = c.height / 2;
-let minRadius = ((c.height > c.width) ? c.width / 2 : c.height / 2) / numberOfCirles;
+let midX;
+let midY;
+let minRadius;
 let freeSpaceInward;
 let freeSpaceOutward;
 let degreeToRadian = (degree) => degree * Math.PI / 180;
 let radianToDegree = (rad) => rad * (180 / Math.PI);
-let clear = () => ctx.clearRect(0, 0, c.width, c.height);
 let createRGBCode = (rgb) => 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
 let calculateVectorDistance = (x1, y1, x2, y2) => Math.sqrt(Math.pow((x1 - x2), 2) + Math.pow((y1 - y2), 2));
+let clear = () => ctx.clearRect(0, 0, c.width, c.height);
 
 const mainColors = [
     "#ac1a1a", "#d84060", "#a04080", "#4040a0",
@@ -93,7 +93,19 @@ form.addEventListener("submit", (event) => {
 
 function initialize() {
     isTouchDevice = _isTouchDevice();
-    window.addEventListener("resize", reCalculateSizes);
+
+    if (!isTouchDevice) {
+        window.addEventListener("resize", reCalculateSizes);
+        // turned off for mobiles, as it was firing too much and unnecessarily 
+    }
+
+    const { width, height } = c.getBoundingClientRect();
+    c.width = width;
+    c.height = height;
+    midX = c.width / 2;
+    midY = c.height / 2;
+    minRadius = ((c.height > c.width) ? c.width / 2 : c.height / 2) / numberOfCirles;
+
     (isTouchDevice)
         ? setTouchEvents()
         : setClickEventListeners();
@@ -106,6 +118,9 @@ function refresh() {
     drawBackground();
     drawColorWheel();
     drawColorSelectors();
+    canvasRefreshedEvent = new CustomEvent("canvasRefreshed", {
+        choosenColors: getChoosenShades()
+    });
 }
 
 function _isTouchDevice() {
@@ -119,15 +134,25 @@ function _isTouchDevice() {
 /***********************************************************/
 /* Events, Eventhandlers */
 
+
 function reCalculateSizes() {// Used to recalculate canvas sizes
+    const { width, height } = c.getBoundingClientRect();
+
+    if (width === c.width && height === c.height)
+        return;
+
+    c.width = width;
+    c.height = height;
     midX = c.width / 2;
     midY = c.height / 2;
-    let maxRadius = (c.height > c.width) ? c.width / 2 : c.height / 2;
-    minRadius = maxRadius / numberOfCirles;
+    minRadius = ((c.height > c.width) ? c.width / 2 : c.height / 2) / numberOfCirles;
     isMouseDown = false;
     isDragAllowed = false;
+    hitRectangles = setMode(colorSchemeMode);
+
     refresh();
 }
+
 
 /* Touch events */
 function setTouchEvents() {
@@ -155,6 +180,8 @@ function mouseDownHandler(event) {
         currentPosition.x = event.clientX - canvasRect.left;
         currentPosition.y = event.clientY - canvasRect.top;
     }
+    console.log(currentPosition);
+    console.log(hitRectangles);
 
     let i = 0;
     while (hitRectangles.length != i && !hitRectangles[i].contains(currentPosition.x, currentPosition.y))
