@@ -10,23 +10,26 @@ class Rect {
     }
 
     move(deltaX, deltaY) {
-        this.x += deltaX;
-        this.centerX += deltaX;
-        this.y += deltaY;
-        this.centerY += deltaY;
+        this.x += Number(deltaX);
+        this.centerX += Number(deltaX);
+        this.y += Number(deltaY);
+        this.centerY += Number(deltaY);
     }
 
     rotate(radian, pivotX, pivotY) {
+        radian = Number(radian);
+        pivotX = Number(pivotX);
+        pivotY = Number(pivotY);
         const translatedX = this.centerX - pivotX;
         const translatedY = this.centerY - pivotY;
 
         const rotatedX = translatedX * Math.cos(radian) - translatedY * Math.sin(radian);
         const rotatedY = translatedX * Math.sin(radian) + translatedY * Math.cos(radian);
 
-        this.x = (rotatedX + pivotX) - this.w / 2;
-        this.y = (rotatedY + pivotY) - this.h / 2;
-        this.centerX = (this.x + this.w / 2);
-        this.centerY = (this.y + this.h / 2);
+        this.x = Number((rotatedX + pivotX) - this.w / 2);
+        this.y = Number((rotatedY + pivotY) - this.h / 2);
+        this.centerX = Number(this.x + this.w / 2);
+        this.centerY = Number(this.y + this.h / 2);
     }
 
     contains(x, y) {
@@ -42,27 +45,22 @@ class Rect {
 const c = document.getElementById("canvas");
 const ctx = c.getContext("2d", { willReadFrequently: true });
 
+let isTouchDevice;
 let colorSchemeMode = "monochromatic"; // the default mode
-
 const numberOfCirles = 6;
 let currentCircle; // default, used to keep track of which segments are affected.
 let currentPosition = { x: -1, y: -1 } // Used to keep track of movement of the mouse
-
 let hitRectangles = []; // The clickable area of the small color picker circles.
 let isMouseDown = false; // Used to prevent mouseMove from unintential triggering.
 let isDragAllowed = false; // Whether the user clicked on a hitbox or not.
-
 let midX = c.width / 2;
 let midY = c.height / 2;
 let minRadius = ((c.height > c.width) ? c.width / 2 : c.height / 2) / numberOfCirles;
-
 let freeSpaceInward;
 let freeSpaceOutward;
-
 let degreeToRadian = (degree) => degree * Math.PI / 180;
 let radianToDegree = (rad) => rad * (180 / Math.PI);
 let clear = () => ctx.clearRect(0, 0, c.width, c.height);
-
 let createRGBCode = (rgb) => 'rgb(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ')';
 let calculateVectorDistance = (x1, y1, x2, y2) => Math.sqrt(Math.pow((x1 - x2), 2) + Math.pow((y1 - y2), 2));
 
@@ -86,7 +84,6 @@ form.addEventListener("submit", (event) => {
     hitRectangles = setMode(modes.find((mode) => mode.selected).value);
     refresh();
 });
-console.log(hitRectangles);
 
 /* FOR DEMO */
 /***********************************************************/
@@ -95,7 +92,11 @@ console.log(hitRectangles);
 /* Initialization */
 
 function initialize() {
-    setEventListeners();
+    isTouchDevice = _isTouchDevice();
+    window.addEventListener("resize", reCalculateSizes);
+    (isTouchDevice)
+        ? setTouchEvents()
+        : setClickEventListeners();
     hitRectangles = setMode(colorSchemeMode);
     refresh();
 }
@@ -107,17 +108,18 @@ function refresh() {
     drawColorSelectors();
 }
 
-/***********************************************************/
-/* Events, Eventhandlers */
-function setEventListeners() {
-    window.addEventListener("resize", reCalculateSizes);
-    c.addEventListener("mousedown", (event) => { mouseDownHandler(event) });
-    c.addEventListener("mousemove", (event) => { mouseMoveHandler(event) });
-    c.addEventListener("mouseup", mouseUpHandler);
-    c.addEventListener("mouseleave", mouseUpHandler);
+function _isTouchDevice() {
+    return (
+        "ontouchstart" in window ||
+        navigator.maxTouchPoints > 0 ||
+        navigator.msMaxTouchPoints > 0
+    );
 }
 
-function reCalculateSizes() {
+/***********************************************************/
+/* Events, Eventhandlers */
+
+function reCalculateSizes() {// Used to recalculate canvas sizes
     midX = c.width / 2;
     midY = c.height / 2;
     let maxRadius = (c.height > c.width) ? c.width / 2 : c.height / 2;
@@ -127,12 +129,32 @@ function reCalculateSizes() {
     refresh();
 }
 
+/* Touch events */
+function setTouchEvents() {
+    c.addEventListener("touchstart", (event) => mouseDownHandler(event));
+    c.addEventListener("touchmove", (event) => mouseMoveHandler(event));
+    c.addEventListener("touchend", movementEndHandler);
+    c.addEventListener("touchcancel", movementEndHandler);
+}
+
+/* Click events */
+function setClickEventListeners() {
+    c.addEventListener("mousedown", (event) => { mouseDownHandler(event) });
+    c.addEventListener("mousemove", (event) => { mouseMoveHandler(event) });
+    c.addEventListener("mouseup", movementEndHandler);
+    c.addEventListener("mouseleave", movementEndHandler);
+}
+
 function mouseDownHandler(event) {
     isMouseDown = true;
-    canvasRect = canvas.getBoundingClientRect();
-    currentPosition.x = event.clientX - canvasRect.left;
-    currentPosition.y = event.clientY - canvasRect.top;
-    console.log(currentPosition);
+    canvasRect = c.getBoundingClientRect();
+    if (isTouchDevice) {
+        currentPosition.x = event.touches[0].clientX - canvasRect.left;
+        currentPosition.y = event.touches[0].clientY - canvasRect.top;
+    } else {
+        currentPosition.x = event.clientX - canvasRect.left;
+        currentPosition.y = event.clientY - canvasRect.top;
+    }
 
     let i = 0;
     while (hitRectangles.length != i && !hitRectangles[i].contains(currentPosition.x, currentPosition.y))
@@ -148,12 +170,18 @@ function mouseDownHandler(event) {
 
 function mouseMoveHandler(event) {
     if (!isMouseDown || !isDragAllowed) return;
+    event.preventDefault();
     /* Rotation implementation */
     const lastPosition = { x, y } = currentPosition;
     const lastAngle = Math.atan2(lastPosition.y - midY, lastPosition.x - midX);
 
-    currentPosition.x = event.clientX - canvasRect.left;
-    currentPosition.y = event.clientY - canvasRect.top;
+    if (isTouchDevice) {
+        currentPosition.x = event.touches[0].clientX - canvasRect.left;
+        currentPosition.y = event.touches[0].clientY - canvasRect.top;
+    } else {
+        currentPosition.x = event.clientX - canvasRect.left;
+        currentPosition.y = event.clientY - canvasRect.top;
+    }
 
     const newAngle = Math.atan2(currentPosition.y - midY, currentPosition.x - midX);
     const deltaAngle = newAngle - lastAngle;
@@ -199,7 +227,7 @@ function mouseMoveHandler(event) {
     refresh();
 }
 
-function mouseUpHandler() {
+function movementEndHandler() {
     isMouseDown = false;
     isDragAllowed = false;
 }
@@ -207,6 +235,7 @@ function mouseUpHandler() {
 /***********************************************************/
 /* Functions */
 
+/* Drawing functions */
 function drawBackground() {
     ctx.save();
     ctx.fillStyle = "black";
@@ -245,7 +274,7 @@ function drawColorSelectors() {
     ctx.restore();
 }
 
-function getChoosenShades() {
+function getChoosenShades() { // Returns the color of the mid point of each hitRectangle
     shades = [];
     hitRectangles.forEach(hitRect => {
         const imageData = ctx.getImageData(hitRect.centerX, hitRect.centerY, 1, 1);
@@ -254,8 +283,7 @@ function getChoosenShades() {
     return shades;
 }
 
-/* Color Scheme Modes */
-function setMode(mode) {
+function setMode(mode) { // Color Scheme Modes 
     let degreeStops;
     let repetation; // How many row to make must be lower than the number of circles!
 
@@ -308,8 +336,6 @@ function setMode(mode) {
     return rects;
 }
 
-
-
 function hexToRgb(hex) {
     hex = hex.replace("#", "");
 
@@ -320,23 +346,24 @@ function hexToRgb(hex) {
     return { r, g, b };
 }
 
-function adjustShade(rgb, factor) {
-    let r = Math.min(255, Math.round(rgb.r * factor));
-    let g = Math.min(255, Math.round(rgb.g * factor));
-    let b = Math.min(255, Math.round(rgb.b * factor));
-    return "rgb(" + r + ',' + g + ',' + b + ")";
+function adjustShade(_rgb, factor) { // Changes lightness level depending on the given factor
+    let rgb = []
+    rgb.push(Math.min(255, Math.round(_rgb.r * factor))); // Red
+    rgb.push(Math.min(255, Math.round(_rgb.g * factor))); // Green
+    rgb.push(Math.min(255, Math.round(_rgb.b * factor))); // Blue
+    return createRGBCode(rgb);
 }
 
 /***********************************************************/
 /* For visual debugging, not part of the project. */
 
-async function pause(ms) {
+async function pause(ms) { // Requires async fuction to work with
     return new Promise(resolve => {
         setTimeout(resolve, ms);
     });
 }
 
-function hightLightHitRects() {
+function hightLightHitRects() { // Highlightes hitRectangles
     ctx.save();
     hitRectangles.forEach(hitRect => {
         ctx.beginPath();
