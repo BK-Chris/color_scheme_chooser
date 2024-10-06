@@ -35,57 +35,87 @@ Select a mode from the dropdown menu and drag the little circles on the canvas t
 
 ## Documentation
 
-Describes the variables, logic, and functions of the application.
+# ColorWheel Class Documentation
 
-### Global Varibles
->* **colorSchemeMode** The current color scheme mode.
->* **numberOfCirles** The number of circles.
->* **currentCircle** Used to keep track of whether the circle has been moved to a new circle
->* **currentPosition** Used to keep track of movement of the mouse
->* **hitRectangles** The clickable area of the small color picker circles.
->* **isMouseDown** Used to prevent mouseMove from unintential triggering.
->* **isDragAllowed** Whether the user clicked on a hitbox or not.
->* **midX** The color wheel's center point on the X axis.
->* **midY** The color wheel's center point on the Y axis.
->* **minRadius** = maxRadius / numberOfCirles. Also the rate at which each hitbox move out/inward to/from the (midX,midY).
->* **freeSpaceInward** The number of free space available inward. Used to prevent from going further as that would lead to undesireable behaviour of the color pickers.
->* **freeSpaceOutward** The number of free space available outward. Used to prevent from going further as that would lead to undesireable behaviour of the color pickers.
->* **mainColors[0..n]** In this example I use 12 colors but you could add more or less.
+The `ColorWheel` class provides an interactive color wheel visualization and selection tool within a canvas element.
 
-### Helper Functions
+## Constructor
 
->* **degreeToRadian(degree)** Converts degree value to radian.
->* **radianToDegree(rad)** Converts radian value to degree.
->* **clear()** Clears the canvas.
->* **createRGBCode(rgb[0..2])** Returns an RGB string.
->* **calculateVectorDistance(x1,y1,x2,y2)** Calculates the vector distance.
+* `canvasElement`: (required) The HTML canvas element where the color wheel will be drawn.
+* `numberOfShades`: (optional, default 6) The number of color shades to generate.
+* `colorSchemeMode`: (optional, default "monochromatic") The color scheme to use ("monochromatic", "analogous", "complementary", "split-complementary", "triadic", "tetradic", "square").
 
-------
+## Properties
 
-### Functions
+* `mouseDown`: (read/write) Indicates whether the mouse button is currently pressed.
+* `dragAllowed`: (read/write) Indicates whether dragging is allowed.
+* `cWidth`: (read/write) The width of the canvas.
+* `cHeight`: (read/write) The height of the canvas.
+* `canvasMidX`: (read-only) The x-coordinate of the canvas center.
+* `canvasMidY`: (read-only) The y-coordinate of the canvas center.
+* `minRadius`: (read-only) The minimum radius of the color wheel.
+* `currentPosition`: (read/write) The current mouse position.
+* `currentShade`: (read/write) The currently selected shade.
+* `numberOfShades`: (read-only) The number of shades in the color wheel.
+* `colorSchemeMode`: (read-only) The current color scheme mode. Use `setColorSchemeMode()` to change it.
+* `hitRectangles`: (read-only) An array of `Rectangle` objects representing the clickable color selector areas.
 
->`Note: This could be the constructor along with its (as of now) global variables.`
->* **initialize()**
-    Responsible to set up the event handlers, gets the [hitRectangles](#global-varibles) from setMode() then calls refresh().
+## Methods
 
->* **refresh()**
-Initially this function draws the canvas as well as responsible for redrawing the canvas. Clears the canvas calling [clear](#helper-functions)
+* `setColorSchemeMode(mode)`: Sets the color scheme mode.
+* `refresh()`: Redraws the color wheel.
+* `getChoosenShades()`: Returns an array of RGB color strings representing the selected shades.
+* `hightLightHitRectangles(color)`: Highlights the hitboxes (color selector rectangles) with the specified color. Might be useful for debugging.
 
->* **setEventListeners()**
-Called once to set the event listeners on the page. Listens to "resize" of the window, "mousedown", "mousemove", "mouseup", "mouseleave" events. More about the event listeners used [here](#event-listeners).
+## Events
 
-#### Drawing functions
->* **drawColorWheel()** Draws the color wheel on the canvas with a conic gradient and multiple circles also utalizes the `adjustShade(rgb, factor)` function and creates different shades of the original colors.
->* **drawColorSelectors()**  Draws the color selector circles on top of the color wheel, indicating the chosen colors.
+* `colorChanged`: Dispatched on the canvas element whenever the colors on the color wheel are modified (e.g., by dragging).
 
->* **getChoosenShades()** Retrieves the RGB color values of the selected shades from the canvas.
->* **setMode(mode)** Sets the color scheme mode and generates the corresponding `hitRectangles` for the color selectors.
->* **hexToRgb(hexCode)** Converts a hexadecimal color code to an RGB object. `required by adjustShade`
->* **adjustShade(rgb, factor)** Adjusts the shade of an RGB color by a given factor.
+## Usage
 
-#### Event Listeners
+```html
+<form id="choose_mode">
+    <label for="modes">Choose a selection mode</label>
+    <select name="modes" id="modes">
+        <option value="monochromatic">Monochromatic</option>
+        <option value="analogous">Analogous</option>
+        <option value="complementary">Complementary</option>
+        <option value="split-complementary">Split-Complementary</option>
+        <option value="triadic">Triadic</option>
+        <option value="tetradic">Tetradic</option>
+        <option value="square">Square</option>
+    </select>
+</form>
+<div id="canvas_container">
+    <canvas id="canvas">
+    </canvas>
+</div>
+<ul id="choosen_colors">
+</ul>
+```
 
->* **reCalculateSizes()** Recalculates sizes and positions of elements when the window is resized.
->* **mouseDownHandler()** Handles the `mousedown` event, checking if a hit rectangle is clicked and initiating the drag behavior.
->* **mouseMoveHandler()** Handles the `mousemove` event, updating the color selectors' positions based on mouse movement.
->* **mouseUpHandler()** Handles the `mouseup` and `mouseleave` events, ending the drag behavior.
+```javascript
+const colorWheel = new ColorWheel(document.getElementById("canvas"), 8);
+const colorListContainer = document.getElementById("choosen_colors");
+const form = document.getElementById("choose_mode");
+
+colorWheel._c.addEventListener("colorChanged", fillColorList);
+form.addEventListener("input", (event) => {
+    event.preventDefault();
+    const modes = Array.from(document.getElementById("modes").children);
+    colorWheel.setColorSchemeMode(modes.find((mode) => mode.selected).value);
+});
+
+fillColorList();
+
+function fillColorList() {
+    const choosenShades = colorWheel.getChoosenShades();
+    colorListContainer.innerHTML = "";
+    choosenShades.forEach(shade => {
+        const liItem = document.createElement("li");
+        liItem.style.background = shade;
+        liItem.innerText = shade;
+        colorListContainer.appendChild(liItem);
+    });
+}
+```
